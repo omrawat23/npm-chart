@@ -14,7 +14,7 @@ import {
   Legend,
   Filler
 } from 'chart.js'
-import { Search, Download, Link, PaintBucket } from 'lucide-react'
+import { Download, Link, PaintBucket } from 'lucide-react'
 import { ColorPicker } from '@/components/color-picker'
 import { Slider } from '@/components/ui/slider'
 
@@ -37,18 +37,18 @@ export default function PackagePage() {
   const [loading, setLoading] = useState(true)
   const [chartColor, setChartColor] = useState('#FFD700')
   const [dateRange, setDateRange] = useState([0, 100])
-  const [isColorPickerOpen, setIsColorPickerOpen] = useState(false);
+  const [isColorPickerOpen, setIsColorPickerOpen] = useState(false)
 
   const toggleColorPicker = () => {
-    setIsColorPickerOpen(!isColorPickerOpen);
-  };
+    setIsColorPickerOpen(!isColorPickerOpen)
+  }
 
   useEffect(() => {
     const fetchData = async () => {
       try {
         const [packageRes, downloadsRes] = await Promise.all([
           fetch(`/api/npm-package?package=${params.name}`),
-          fetch(`/api/npm-downloads?package=${params.name}`)
+          fetch(`/api/npm-downloads?package=${params.name}&period=${viewType}`)
         ])
         
         const packageJson = await packageRes.json()
@@ -64,35 +64,51 @@ export default function PackagePage() {
     }
 
     fetchData()
-  }, [params.name])
+  }, [params.name, viewType])
+
+  const reduceDataPoints = (data: any[], labels: string[], maxPoints: number) => {
+    if (data.length <= maxPoints) return { data, labels };
+    
+    const factor = Math.ceil(data.length / maxPoints);
+    return {
+      data: data.filter((_, index) => index % factor === 0),
+      labels: labels.filter((_, index) => index % factor === 0)
+    };
+  };
 
   const filteredChartData = useMemo(() => {
-    if (!downloadData) return null
+    if (!downloadData) return null;
 
-    const dates = Object.keys(downloadData)
-    const startIndex = Math.floor(dates.length * (dateRange[0] / 100))
-    const endIndex = Math.ceil(dates.length * (dateRange[1] / 100))
+    const dates = Object.keys(downloadData);
+    const startIndex = Math.floor(dates.length * (dateRange[0] / 100));
+    const endIndex = Math.ceil(dates.length * (dateRange[1] / 100));
 
-    const filteredDates = dates.slice(startIndex, endIndex)
-    const filteredDownloads = filteredDates.map(date => downloadData[date])
+    const filteredDates = dates.slice(startIndex, endIndex);
+    const filteredDownloads = filteredDates.map(date => downloadData[date]);
+
+    // Reduce the number of data points
+    const { data: reducedDownloads, labels: reducedDates } = reduceDataPoints(filteredDownloads, filteredDates, 20);
 
     return {
-      labels: filteredDates,
+      labels: reducedDates,
       datasets: [
         {
           label: params.name as string,
-          data: filteredDownloads,
+          data: reducedDownloads,
           fill: true,
           borderColor: chartColor,
           backgroundColor: `${chartColor}20`,
-          tension: 0.4,
+          tension: 0,
           borderWidth: 2,
-          pointRadius: 0,
-          pointHoverRadius: 6,
+          pointRadius: 3,
+          pointHoverRadius: 5,
+          pointBackgroundColor: chartColor,
+          pointBorderColor: 'white',
+          pointBorderWidth: 2,
         }
       ]
-    }
-  }, [downloadData, dateRange, chartColor, params.name])
+    };
+  }, [downloadData, dateRange, chartColor, params.name]);
 
   const chartOptions = {
     responsive: true,
@@ -126,11 +142,12 @@ export default function PackagePage() {
           display: false,
         },
         grid: {
-          color: 'rgba(255, 255, 255, 0.1)',
+          display: false, // Remove vertical grid lines
         },
         ticks: {
           color: '#666',
           maxTicksLimit: 6,
+          padding: 10,
         }
       },
       y: {
@@ -139,11 +156,14 @@ export default function PackagePage() {
         },
         grid: {
           color: 'rgba(255, 255, 255, 0.1)',
+          drawTicks: false,
         },
         ticks: {
           color: '#666',
+          padding: 10,
+          count: 6, // This will create 5 spaces between ticks, resulting in 5 lines
           callback: (value: any) => {
-            return `${value / 1000000}M`
+            return `${(value / 1000000).toFixed(1)}M`
           }
         }
       }
@@ -163,32 +183,28 @@ export default function PackagePage() {
   }
 
   return (
-    <div className="min-h-screen">
-      
-      
+    <div className="min-h-screen bg-background text-foreground">
       <div className="max-w-5xl mx-auto px-6 py-12">
-
         {packageData && filteredChartData && (
           <>
             <div className="mb-8">
               <h1 className="text-2xl font-semibold mb-1">
                 {packageData.name} <span className="text-muted-foreground">v{packageData.version}</span>
-             
               </h1>
 
               <div className="flex justify-between">
                 <p className="text-muted-foreground mb-2">{packageData.description}</p>
                 <button
-                    onClick={toggleColorPicker}
-                    className="p-2 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 transition"
-                    aria-label="Open color picker"
+                  onClick={toggleColorPicker}
+                  className="p-2 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 transition"
+                  aria-label="Open color picker"
                 >
-                    <PaintBucket className="w-6 h-6 text-current" />
+                  <PaintBucket className="w-6 h-6 text-current" />
                 </button>
                 {isColorPickerOpen && (
-                    <ColorPicker onChange={setChartColor} />
+                  <ColorPicker onChange={setChartColor} />
                 )}
-                </div>
+              </div>
             
               <a 
                 href={packageData.homepage}
@@ -252,6 +268,7 @@ export default function PackagePage() {
                 value={dateRange}
                 onValueChange={handleSliderChange}
                 className="w-full"
+                color={chartColor}
               />
               <div className="mt-2 text-sm text-muted-foreground flex justify-between">
                 <span>Start: {filteredChartData.labels[0]}</span>
@@ -264,3 +281,4 @@ export default function PackagePage() {
     </div>
   )
 }
+
